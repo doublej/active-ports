@@ -25,10 +25,64 @@ interface PortInfo {
   user: string;
   displayName: string;
   projectPath?: string;
-  isVite: boolean;
-  isDevServer: boolean;
   cwd?: string;
   pageTitle?: string;
+  // Service detection flags
+  isVite: boolean;
+  isDevServer: boolean;
+  isFastAPI: boolean;
+  isFlask: boolean;
+  isNextJS: boolean;
+  isSvelteKit: boolean;
+  // Docker info
+  dockerContainer?: string;
+  dockerImage?: string;
+}
+
+interface ServiceFlags {
+  isVite: boolean;
+  isFastAPI: boolean;
+  isFlask: boolean;
+  isNextJS: boolean;
+  isSvelteKit: boolean;
+  isDevServer: boolean;
+}
+
+function detectServiceType(command: string): ServiceFlags {
+  const isVite = /vite|@vitejs/i.test(command);
+  const isFastAPI = /uvicorn|fastapi/i.test(command);
+  const isFlask = /flask/i.test(command);
+  const isNextJS = /next-server|next dev|next start/i.test(command);
+  const isSvelteKit = /svelte/i.test(command);
+  const isDevServer = isVite || isNextJS || isSvelteKit || /webpack|nuxt|remix|astro/i.test(command);
+
+  return { isVite, isFastAPI, isFlask, isNextJS, isSvelteKit, isDevServer };
+}
+
+interface DockerInfo {
+  container: string;
+  image: string;
+}
+
+function getDockerPorts(): Map<number, DockerInfo> {
+  const portMap = new Map<number, DockerInfo>();
+  try {
+    const output = execSync("docker ps --format '{{.Names}}\t{{.Ports}}\t{{.Image}}' 2>/dev/null", {
+      encoding: "utf-8",
+    });
+    for (const line of output.split("\n")) {
+      if (!line.trim()) continue;
+      const [container, ports, image] = line.split("\t");
+      // Parse port mappings like "0.0.0.0:3000->3000/tcp, :::3000->3000/tcp"
+      const portMatches = ports.matchAll(/(?:\d+\.\d+\.\d+\.\d+|::):(\d+)->/g);
+      for (const match of portMatches) {
+        portMap.set(parseInt(match[1], 10), { container, image });
+      }
+    }
+  } catch {
+    // Docker not running or not installed
+  }
+  return portMap;
 }
 
 /** Extract a smart display name from command/path */
@@ -134,6 +188,9 @@ async function getActivePorts(): Promise<PortInfo[]> {
 
   if (!output?.trim()) return [];
 
+  // Get Docker port mappings upfront
+  const dockerPorts = getDockerPorts();
+
   const portMap = new Map<string, PortInfo>();
   let currentPid = 0;
   let currentCommand = "";
@@ -159,7 +216,6 @@ async function getActivePorts(): Promise<PortInfo[]> {
         if (!portMatch) break;
 
         const port = parseInt(portMatch[1], 10);
-        // Dedupe by port alone - we only want one entry per port
         const key = String(port);
         if (portMap.has(key)) break;
 
@@ -179,8 +235,8 @@ async function getActivePorts(): Promise<PortInfo[]> {
           // ignore
         }
 
-        const isVite = /vite|@vitejs/i.test(fullCommand);
-        const isDevServer = isVite || /webpack|next|nuxt|remix|astro/i.test(fullCommand);
+        const serviceFlags = detectServiceType(fullCommand);
+        const dockerInfo = dockerPorts.get(port);
         const { name, project } = getDisplayName(fullCommand, cwd);
 
         portMap.set(key, {
@@ -190,9 +246,10 @@ async function getActivePorts(): Promise<PortInfo[]> {
           user: currentUser,
           displayName: name,
           projectPath: project || cwd,
-          isVite,
-          isDevServer,
           cwd,
+          ...serviceFlags,
+          dockerContainer: dockerInfo?.container,
+          dockerImage: dockerInfo?.image,
         });
         break;
       }
@@ -270,6 +327,163 @@ function RestartViteForm({ info, onRestart }: { info: PortInfo; onRestart: () =>
   );
 }
 
+function RestartFastAPIForm({ info, onRestart }: { info: PortInfo; onRestart: () => void }) {
+  const { pop } = useNavigation();
+  const [newPort, setNewPort] = useState(String(info.port + 1));
+  const [reload, setReload] = useState(true);
+
+  async function handleSubmit() {
+    const port = parseInt(newPort, 10);
+    if (isNaN(port) || port < 1 || port > 65535) {
+      await showToast({ style: Toast.Style.Failure, title: "Invalid port number" });
+      return;
+    }
+
+    try {
+      execSync(`kill -9 ${info.pid} 2>/dev/null`);
+    } catch {
+      // Process may already be dead
+    }
+
+    const cwd = info.cwd || process.cwd();
+    const toast = await showToast({ style: Toast.Style.Animated, title: "Starting Uvicorn..." });
+    const reloadFlag = reload ? " --reload" : "";
+
+    // Extract the app module from the command (e.g., "main:app")
+    const appMatch = info.command.match(/uvicorn\s+([^\s]+)/);
+    const appModule = appMatch?.[1] || "main:app";
+
+    exec(`cd "${cwd}" && uvicorn ${appModule} --port ${port}${reloadFlag}`, (error) => {
+      if (error) {
+        toast.style = Toast.Style.Failure;
+        toast.title = "Failed to start Uvicorn";
+      }
+    });
+
+    await new Promise((r) => setTimeout(r, 1500));
+    toast.style = Toast.Style.Success;
+    toast.title = `Uvicorn restarting on port ${port}`;
+
+    onRestart();
+    pop();
+  }
+
+  return (
+    <Form
+      actions={
+        <ActionPanel>
+          <Action.SubmitForm title="Restart Uvicorn" onSubmit={handleSubmit} icon={Icon.ArrowClockwise} />
+        </ActionPanel>
+      }
+    >
+      <Form.Description text={`Restart Uvicorn from: ${info.cwd || "unknown"}`} />
+      <Form.TextField id="port" title="New Port" placeholder="8001" value={newPort} onChange={setNewPort} />
+      <Form.Checkbox id="reload" label="Enable --reload flag" value={reload} onChange={setReload} />
+    </Form>
+  );
+}
+
+function RestartNextJSForm({ info, onRestart }: { info: PortInfo; onRestart: () => void }) {
+  const { pop } = useNavigation();
+  const [newPort, setNewPort] = useState(String(info.port + 1));
+
+  async function handleSubmit() {
+    const port = parseInt(newPort, 10);
+    if (isNaN(port) || port < 1 || port > 65535) {
+      await showToast({ style: Toast.Style.Failure, title: "Invalid port number" });
+      return;
+    }
+
+    try {
+      execSync(`kill -9 ${info.pid} 2>/dev/null`);
+    } catch {
+      // Process may already be dead
+    }
+
+    const cwd = info.cwd || process.cwd();
+    const toast = await showToast({ style: Toast.Style.Animated, title: "Starting Next.js..." });
+
+    exec(`cd "${cwd}" && npm run dev -- --port ${port}`, (error) => {
+      if (error) {
+        toast.style = Toast.Style.Failure;
+        toast.title = "Failed to start Next.js";
+      }
+    });
+
+    await new Promise((r) => setTimeout(r, 2000));
+    toast.style = Toast.Style.Success;
+    toast.title = `Next.js restarting on port ${port}`;
+
+    onRestart();
+    pop();
+  }
+
+  return (
+    <Form
+      actions={
+        <ActionPanel>
+          <Action.SubmitForm title="Restart Next.js" onSubmit={handleSubmit} icon={Icon.ArrowClockwise} />
+        </ActionPanel>
+      }
+    >
+      <Form.Description text={`Restart Next.js from: ${info.cwd || "unknown"}`} />
+      <Form.TextField id="port" title="New Port" placeholder="3001" value={newPort} onChange={setNewPort} />
+    </Form>
+  );
+}
+
+function RestartFlaskForm({ info, onRestart }: { info: PortInfo; onRestart: () => void }) {
+  const { pop } = useNavigation();
+  const [newPort, setNewPort] = useState(String(info.port + 1));
+  const [debug, setDebug] = useState(true);
+
+  async function handleSubmit() {
+    const port = parseInt(newPort, 10);
+    if (isNaN(port) || port < 1 || port > 65535) {
+      await showToast({ style: Toast.Style.Failure, title: "Invalid port number" });
+      return;
+    }
+
+    try {
+      execSync(`kill -9 ${info.pid} 2>/dev/null`);
+    } catch {
+      // Process may already be dead
+    }
+
+    const cwd = info.cwd || process.cwd();
+    const toast = await showToast({ style: Toast.Style.Animated, title: "Starting Flask..." });
+    const debugFlag = debug ? " --debug" : "";
+
+    exec(`cd "${cwd}" && flask run --port ${port}${debugFlag}`, (error) => {
+      if (error) {
+        toast.style = Toast.Style.Failure;
+        toast.title = "Failed to start Flask";
+      }
+    });
+
+    await new Promise((r) => setTimeout(r, 1500));
+    toast.style = Toast.Style.Success;
+    toast.title = `Flask restarting on port ${port}`;
+
+    onRestart();
+    pop();
+  }
+
+  return (
+    <Form
+      actions={
+        <ActionPanel>
+          <Action.SubmitForm title="Restart Flask" onSubmit={handleSubmit} icon={Icon.ArrowClockwise} />
+        </ActionPanel>
+      }
+    >
+      <Form.Description text={`Restart Flask from: ${info.cwd || "unknown"}`} />
+      <Form.TextField id="port" title="New Port" placeholder="5001" value={newPort} onChange={setNewPort} />
+      <Form.Checkbox id="debug" label="Enable --debug flag" value={debug} onChange={setDebug} />
+    </Form>
+  );
+}
+
 async function getHiddenPorts(): Promise<number[]> {
   const stored = await LocalStorage.getItem<string>(HIDDEN_PORTS_KEY);
   return stored ? JSON.parse(stored) : [];
@@ -277,6 +491,39 @@ async function getHiddenPorts(): Promise<number[]> {
 
 async function setHiddenPorts(ports: number[]): Promise<void> {
   await LocalStorage.setItem(HIDDEN_PORTS_KEY, JSON.stringify(ports));
+}
+
+async function dockerAction(action: string, container: string, port: number): Promise<void> {
+  const toast = await showToast({ style: Toast.Style.Animated, title: `Running docker ${action}...` });
+  try {
+    execSync(`docker ${action} ${container}`, { encoding: "utf-8" });
+    toast.style = Toast.Style.Success;
+    toast.title = `Container ${action} completed`;
+  } catch {
+    toast.style = Toast.Style.Failure;
+    toast.title = `Failed to ${action} container`;
+  }
+}
+
+async function runSvelteKitPreview(cwd: string, pid: number): Promise<void> {
+  try {
+    execSync(`kill -9 ${pid} 2>/dev/null`);
+  } catch {
+    // Process may already be dead
+  }
+
+  const toast = await showToast({ style: Toast.Style.Animated, title: "Building and starting preview..." });
+
+  exec(`cd "${cwd}" && npm run build && npm run preview`, (error) => {
+    if (error) {
+      toast.style = Toast.Style.Failure;
+      toast.title = "Failed to start preview";
+    }
+  });
+
+  await new Promise((r) => setTimeout(r, 3000));
+  toast.style = Toast.Style.Success;
+  toast.title = "SvelteKit preview starting";
 }
 
 function PortListItem({
@@ -301,23 +548,33 @@ function PortListItem({
   }, [info.port, info.isDevServer]);
 
   const icon = (() => {
-    if (info.isVite) return { source: Icon.Bolt, tintColor: Color.Purple };
+    if (info.dockerContainer) return { source: Icon.Box, tintColor: Color.Blue };
+    if (info.isVite || info.isSvelteKit) return { source: Icon.Bolt, tintColor: Color.Purple };
+    if (info.isNextJS) return { source: Icon.Code, tintColor: Color.Green };
+    if (info.isFastAPI) return { source: Icon.Rocket, tintColor: Color.Orange };
+    if (info.isFlask) return { source: Icon.Beaker, tintColor: Color.Green };
     if (info.isDevServer) return { source: Icon.Code, tintColor: Color.Green };
     if (info.command.includes("python")) return { source: Icon.Code, tintColor: Color.Yellow };
-    if (info.command.includes("docker")) return { source: Icon.Box, tintColor: Color.Blue };
     if (info.command.includes(".app/")) return { source: Icon.AppWindow, tintColor: Color.SecondaryText };
     return { source: Icon.Network, tintColor: Color.SecondaryText };
   })();
 
   const title = pageTitle || info.displayName;
-  const subtitle = info.projectPath
-    ? info.projectPath.replace(/^\/Users\/[^/]+\//, "~/").replace(/\/node_modules\/.*/, "")
-    : undefined;
+  const subtitle = info.dockerContainer
+    ? `Container: ${info.dockerContainer}`
+    : info.projectPath
+      ? info.projectPath.replace(/^\/Users\/[^/]+\//, "~/").replace(/\/node_modules\/.*/, "")
+      : undefined;
 
-  const accessories = [
-    { tag: { value: `:${info.port}`, color: info.isDevServer ? Color.Green : Color.SecondaryText } },
+  const accessories: { tag: { value: string; color: Color } }[] = [
+    { tag: { value: `:${info.port}`, color: info.isDevServer || info.isFastAPI || info.isFlask ? Color.Green : Color.SecondaryText } },
   ];
+  if (info.dockerContainer) accessories.push({ tag: { value: "Docker", color: Color.Blue } });
   if (info.isVite) accessories.push({ tag: { value: "Vite", color: Color.Purple } });
+  if (info.isSvelteKit) accessories.push({ tag: { value: "SvelteKit", color: Color.Orange } });
+  if (info.isNextJS) accessories.push({ tag: { value: "Next.js", color: Color.SecondaryText } });
+  if (info.isFastAPI) accessories.push({ tag: { value: "FastAPI", color: Color.Orange } });
+  if (info.isFlask) accessories.push({ tag: { value: "Flask", color: Color.Green } });
 
   return (
     <List.Item
@@ -326,15 +583,30 @@ function PortListItem({
       title={title}
       subtitle={subtitle}
       accessories={accessories}
-      keywords={[String(info.port), info.displayName, info.command]}
+      keywords={[String(info.port), info.displayName, info.command, info.dockerContainer || ""]}
       actions={
         <ActionPanel>
           <ActionPanel.Section title="Actions">
             <Action.OpenInBrowser
-              title="Visit in Browser"
+              title="Open in Browser"
               url={`http://localhost:${info.port}`}
               icon={Icon.Globe}
             />
+            {info.isFastAPI && (
+              <>
+                <Action.OpenInBrowser
+                  title="Open API Docs (Swagger)"
+                  url={`http://localhost:${info.port}/docs`}
+                  icon={Icon.Document}
+                  shortcut={{ modifiers: ["cmd"], key: "d" }}
+                />
+                <Action.OpenInBrowser
+                  title="Open ReDoc"
+                  url={`http://localhost:${info.port}/redoc`}
+                  icon={Icon.Book}
+                />
+              </>
+            )}
             <Action
               title="Kill Process"
               icon={Icon.XMarkCircle}
@@ -344,15 +616,96 @@ function PortListItem({
                 if (await killProcess(info.pid, info.port)) revalidate();
               }}
             />
-            {info.isVite && info.cwd && (
-              <Action.Push
-                title="Restart on Different Port"
+          </ActionPanel.Section>
+
+          {/* Service-specific restart actions */}
+          {(info.isVite || info.isFastAPI || info.isNextJS || info.isFlask || info.isSvelteKit) && info.cwd && (
+            <ActionPanel.Section title="Restart">
+              {info.isVite && (
+                <Action.Push
+                  title="Restart Vite on Different Port"
+                  icon={Icon.ArrowClockwise}
+                  shortcut={{ modifiers: ["cmd"], key: "r" }}
+                  target={<RestartViteForm info={info} onRestart={revalidate} />}
+                />
+              )}
+              {info.isFastAPI && (
+                <Action.Push
+                  title="Restart Uvicorn on Different Port"
+                  icon={Icon.ArrowClockwise}
+                  shortcut={{ modifiers: ["cmd"], key: "r" }}
+                  target={<RestartFastAPIForm info={info} onRestart={revalidate} />}
+                />
+              )}
+              {info.isNextJS && (
+                <Action.Push
+                  title="Restart Next.js on Different Port"
+                  icon={Icon.ArrowClockwise}
+                  shortcut={{ modifiers: ["cmd"], key: "r" }}
+                  target={<RestartNextJSForm info={info} onRestart={revalidate} />}
+                />
+              )}
+              {info.isFlask && (
+                <Action.Push
+                  title="Restart Flask on Different Port"
+                  icon={Icon.ArrowClockwise}
+                  shortcut={{ modifiers: ["cmd"], key: "r" }}
+                  target={<RestartFlaskForm info={info} onRestart={revalidate} />}
+                />
+              )}
+              {info.isSvelteKit && (
+                <Action
+                  title="Build and Run Preview"
+                  icon={Icon.Play}
+                  onAction={async () => {
+                    await runSvelteKitPreview(info.cwd!, info.pid);
+                    revalidate();
+                  }}
+                />
+              )}
+            </ActionPanel.Section>
+          )}
+
+          {/* Docker-specific actions */}
+          {info.dockerContainer && (
+            <ActionPanel.Section title="Docker">
+              <Action
+                title="Restart Container"
                 icon={Icon.ArrowClockwise}
                 shortcut={{ modifiers: ["cmd"], key: "r" }}
-                target={<RestartViteForm info={info} onRestart={revalidate} />}
+                onAction={async () => {
+                  await dockerAction("restart", info.dockerContainer!, info.port);
+                  revalidate();
+                }}
               />
-            )}
-            {info.cwd && (
+              <Action
+                title="View Logs in Terminal"
+                icon={Icon.Terminal}
+                onAction={() => {
+                  exec(`open -a Terminal -n --args -c "docker logs -f ${info.dockerContainer}"`);
+                }}
+              />
+              <Action
+                title="Stop Container"
+                icon={Icon.Stop}
+                style={Action.Style.Destructive}
+                onAction={async () => {
+                  await dockerAction("stop", info.dockerContainer!, info.port);
+                  revalidate();
+                }}
+              />
+              <Action
+                title="Open Shell in Container"
+                icon={Icon.Terminal}
+                onAction={() => {
+                  exec(`open -a Terminal -n --args -c "docker exec -it ${info.dockerContainer} sh"`);
+                }}
+              />
+            </ActionPanel.Section>
+          )}
+
+          {info.cwd && (
+            <ActionPanel.Section title="Open">
               <Action.Open
                 title="Open in Terminal"
                 target={info.cwd}
@@ -360,8 +713,9 @@ function PortListItem({
                 icon={Icon.Terminal}
                 shortcut={{ modifiers: ["cmd"], key: "t" }}
               />
-            )}
-          </ActionPanel.Section>
+            </ActionPanel.Section>
+          )}
+
           <ActionPanel.Section title="Copy">
             <Action.CopyToClipboard
               title="Copy URL"
@@ -371,7 +725,9 @@ function PortListItem({
             <Action.CopyToClipboard title="Copy Port" content={String(info.port)} />
             <Action.CopyToClipboard title="Copy PID" content={String(info.pid)} />
             {info.cwd && <Action.CopyToClipboard title="Copy Path" content={info.cwd} />}
+            {info.dockerContainer && <Action.CopyToClipboard title="Copy Container Name" content={info.dockerContainer} />}
           </ActionPanel.Section>
+
           <ActionPanel.Section>
             <Action
               title="Refresh"
