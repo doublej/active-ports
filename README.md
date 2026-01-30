@@ -1,21 +1,24 @@
 # Active Ports
 
-View and manage listening ports on your Mac from Raycast.
+Raycast extension to view and manage active TCP ports on your system.
 
 ## Features
 
-- List all TCP ports with process info
-- Service detection: Vite, FastAPI, Flask, Next.js, SvelteKit, Docker
-- Service-specific actions (open Swagger docs, restart on different port, etc.)
-- Kill processes, open in browser, copy URLs
-- Hide/unhide ports you don't care about
+- List all listening ports with process info and service detection
+- Detect Vite, FastAPI, Flask, Next.js, SvelteKit, and Docker containers
+- Kill processes, open in browser, restart on a different port
+- Docker actions: restart, stop, view logs, open shell
 - Menu bar widget showing active port count
+- Hide/unhide ports you don't want to see
 
-## Usage
+## Commands
 
-Open Raycast and search "Show Active Ports" or use the menu bar widget.
+| Command | Description |
+|---------|-------------|
+| Show Active Ports | List all active ports with process information |
+| Active Ports Menu | Menu bar showing active port count with quick actions |
 
-### Actions
+### Service-Specific Actions
 
 | Service | Actions |
 |---------|---------|
@@ -26,13 +29,12 @@ Open Raycast and search "Show Active Ports" or use the menu bar widget.
 | Flask | Restart with --debug |
 | SvelteKit | Build and run preview |
 
-## Installation
+## Install
 
 ```bash
-git clone https://github.com/doublej/active-ports
-cd active-ports
-npm install
-npm run dev
+bun install
+bun run build
+bun run dev
 ```
 
 ## License
