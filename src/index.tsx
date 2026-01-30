@@ -54,7 +54,11 @@ function detectServiceType(command: string): ServiceFlags {
   const isFlask = /flask/i.test(command);
   const isNextJS = /next-server|next dev|next start/i.test(command);
   const isSvelteKit = /svelte/i.test(command);
-  const isDevServer = isVite || isNextJS || isSvelteKit || /webpack|nuxt|remix|astro/i.test(command);
+  const isDevServer =
+    isVite ||
+    isNextJS ||
+    isSvelteKit ||
+    /webpack|nuxt|remix|astro/i.test(command);
 
   return { isVite, isFastAPI, isFlask, isNextJS, isSvelteKit, isDevServer };
 }
@@ -67,9 +71,12 @@ interface DockerInfo {
 function getDockerPorts(): Map<number, DockerInfo> {
   const portMap = new Map<number, DockerInfo>();
   try {
-    const output = execSync("docker ps --format '{{.Names}}\t{{.Ports}}\t{{.Image}}' 2>/dev/null", {
-      encoding: "utf-8",
-    });
+    const output = execSync(
+      "docker ps --format '{{.Names}}\t{{.Ports}}\t{{.Image}}' 2>/dev/null",
+      {
+        encoding: "utf-8",
+      },
+    );
     for (const line of output.split("\n")) {
       if (!line.trim()) continue;
       const [container, ports, image] = line.split("\t");
@@ -86,7 +93,10 @@ function getDockerPorts(): Map<number, DockerInfo> {
 }
 
 /** Extract a smart display name from command/path */
-function getDisplayName(command: string, cwd?: string): { name: string; project?: string } {
+function getDisplayName(
+  command: string,
+  cwd?: string,
+): { name: string; project?: string } {
   // macOS .app bundle
   const appMatch = command.match(/\/([^/]+)\.app\//);
   if (appMatch) {
@@ -97,7 +107,10 @@ function getDisplayName(command: string, cwd?: string): { name: string; project?
   if (cwd) {
     const folders = cwd.split("/").filter(Boolean);
     const lastFolder = folders[folders.length - 1];
-    if (lastFolder && !["node_modules", ".bin", "src", "dist"].includes(lastFolder)) {
+    if (
+      lastFolder &&
+      !["node_modules", ".bin", "src", "dist"].includes(lastFolder)
+    ) {
       return { name: lastFolder, project: cwd };
     }
   }
@@ -108,7 +121,10 @@ function getDisplayName(command: string, cwd?: string): { name: string; project?
     const parts = nodePathMatch[1].split("/").filter(Boolean);
     // Find the project folder (skip node_modules, .bin, etc)
     for (let i = parts.length - 1; i >= 0; i--) {
-      if (!["node_modules", ".bin", "src", "dist", "bin"].includes(parts[i]) && !parts[i].endsWith(".js")) {
+      if (
+        !["node_modules", ".bin", "src", "dist", "bin"].includes(parts[i]) &&
+        !parts[i].endsWith(".js")
+      ) {
         return { name: parts[i], project: nodePathMatch[1] };
       }
     }
@@ -223,14 +239,16 @@ async function getActivePorts(): Promise<PortInfo[]> {
         let fullCommand = currentCommand;
 
         try {
-          cwd = execSync(
-            `/usr/sbin/lsof -p ${currentPid} -Fn 2>/dev/null | awk '/^fcwd/{getline; print substr($0,2)}'`,
-            { encoding: "utf-8" },
-          ).trim() || undefined;
+          cwd =
+            execSync(
+              `/usr/sbin/lsof -p ${currentPid} -Fn 2>/dev/null | awk '/^fcwd/{getline; print substr($0,2)}'`,
+              { encoding: "utf-8" },
+            ).trim() || undefined;
 
-          fullCommand = execSync(`/bin/ps -p ${currentPid} -o args= 2>/dev/null`, {
-            encoding: "utf-8",
-          }).trim() || currentCommand;
+          fullCommand =
+            execSync(`/bin/ps -p ${currentPid} -o args= 2>/dev/null`, {
+              encoding: "utf-8",
+            }).trim() || currentCommand;
         } catch {
           // ignore
         }
@@ -270,22 +288,37 @@ async function killProcess(pid: number, port: number): Promise<boolean> {
 
   try {
     execSync(`kill -9 ${pid} 2>/dev/null`);
-    await showToast({ style: Toast.Style.Success, title: `Killed process on port ${port}` });
+    await showToast({
+      style: Toast.Style.Success,
+      title: `Killed process on port ${port}`,
+    });
     return true;
   } catch {
-    await showToast({ style: Toast.Style.Failure, title: "Failed to kill process" });
+    await showToast({
+      style: Toast.Style.Failure,
+      title: "Failed to kill process",
+    });
     return false;
   }
 }
 
-function RestartViteForm({ info, onRestart }: { info: PortInfo; onRestart: () => void }) {
+function RestartViteForm({
+  info,
+  onRestart,
+}: {
+  info: PortInfo;
+  onRestart: () => void;
+}) {
   const { pop } = useNavigation();
   const [newPort, setNewPort] = useState(String(info.port + 1));
 
   async function handleSubmit() {
     const port = parseInt(newPort, 10);
     if (isNaN(port) || port < 1 || port > 65535) {
-      await showToast({ style: Toast.Style.Failure, title: "Invalid port number" });
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Invalid port number",
+      });
       return;
     }
 
@@ -296,7 +329,10 @@ function RestartViteForm({ info, onRestart }: { info: PortInfo; onRestart: () =>
     }
 
     const cwd = info.cwd || process.cwd();
-    const toast = await showToast({ style: Toast.Style.Animated, title: "Starting Vite..." });
+    const toast = await showToast({
+      style: Toast.Style.Animated,
+      title: "Starting Vite...",
+    });
 
     exec(`cd "${cwd}" && npm run dev -- --port ${port}`, (error) => {
       if (error) {
@@ -317,17 +353,35 @@ function RestartViteForm({ info, onRestart }: { info: PortInfo; onRestart: () =>
     <Form
       actions={
         <ActionPanel>
-          <Action.SubmitForm title="Restart Vite" onSubmit={handleSubmit} icon={Icon.ArrowClockwise} />
+          <Action.SubmitForm
+            title="Restart Vite"
+            onSubmit={handleSubmit}
+            icon={Icon.ArrowClockwise}
+          />
         </ActionPanel>
       }
     >
-      <Form.Description text={`Restart Vite server from: ${info.cwd || "unknown"}`} />
-      <Form.TextField id="port" title="New Port" placeholder="3001" value={newPort} onChange={setNewPort} />
+      <Form.Description
+        text={`Restart Vite server from: ${info.cwd || "unknown"}`}
+      />
+      <Form.TextField
+        id="port"
+        title="New Port"
+        placeholder="3001"
+        value={newPort}
+        onChange={setNewPort}
+      />
     </Form>
   );
 }
 
-function RestartFastAPIForm({ info, onRestart }: { info: PortInfo; onRestart: () => void }) {
+function RestartFastAPIForm({
+  info,
+  onRestart,
+}: {
+  info: PortInfo;
+  onRestart: () => void;
+}) {
   const { pop } = useNavigation();
   const [newPort, setNewPort] = useState(String(info.port + 1));
   const [reload, setReload] = useState(true);
@@ -335,7 +389,10 @@ function RestartFastAPIForm({ info, onRestart }: { info: PortInfo; onRestart: ()
   async function handleSubmit() {
     const port = parseInt(newPort, 10);
     if (isNaN(port) || port < 1 || port > 65535) {
-      await showToast({ style: Toast.Style.Failure, title: "Invalid port number" });
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Invalid port number",
+      });
       return;
     }
 
@@ -346,19 +403,25 @@ function RestartFastAPIForm({ info, onRestart }: { info: PortInfo; onRestart: ()
     }
 
     const cwd = info.cwd || process.cwd();
-    const toast = await showToast({ style: Toast.Style.Animated, title: "Starting Uvicorn..." });
+    const toast = await showToast({
+      style: Toast.Style.Animated,
+      title: "Starting Uvicorn...",
+    });
     const reloadFlag = reload ? " --reload" : "";
 
     // Extract the app module from the command (e.g., "main:app")
     const appMatch = info.command.match(/uvicorn\s+([^\s]+)/);
     const appModule = appMatch?.[1] || "main:app";
 
-    exec(`cd "${cwd}" && uvicorn ${appModule} --port ${port}${reloadFlag}`, (error) => {
-      if (error) {
-        toast.style = Toast.Style.Failure;
-        toast.title = "Failed to start Uvicorn";
-      }
-    });
+    exec(
+      `cd "${cwd}" && uvicorn ${appModule} --port ${port}${reloadFlag}`,
+      (error) => {
+        if (error) {
+          toast.style = Toast.Style.Failure;
+          toast.title = "Failed to start Uvicorn";
+        }
+      },
+    );
 
     await new Promise((r) => setTimeout(r, 1500));
     toast.style = Toast.Style.Success;
@@ -372,25 +435,51 @@ function RestartFastAPIForm({ info, onRestart }: { info: PortInfo; onRestart: ()
     <Form
       actions={
         <ActionPanel>
-          <Action.SubmitForm title="Restart Uvicorn" onSubmit={handleSubmit} icon={Icon.ArrowClockwise} />
+          <Action.SubmitForm
+            title="Restart Uvicorn"
+            onSubmit={handleSubmit}
+            icon={Icon.ArrowClockwise}
+          />
         </ActionPanel>
       }
     >
-      <Form.Description text={`Restart Uvicorn from: ${info.cwd || "unknown"}`} />
-      <Form.TextField id="port" title="New Port" placeholder="8001" value={newPort} onChange={setNewPort} />
-      <Form.Checkbox id="reload" label="Enable --reload flag" value={reload} onChange={setReload} />
+      <Form.Description
+        text={`Restart Uvicorn from: ${info.cwd || "unknown"}`}
+      />
+      <Form.TextField
+        id="port"
+        title="New Port"
+        placeholder="8001"
+        value={newPort}
+        onChange={setNewPort}
+      />
+      <Form.Checkbox
+        id="reload"
+        label="Enable --reload flag"
+        value={reload}
+        onChange={setReload}
+      />
     </Form>
   );
 }
 
-function RestartNextJSForm({ info, onRestart }: { info: PortInfo; onRestart: () => void }) {
+function RestartNextJSForm({
+  info,
+  onRestart,
+}: {
+  info: PortInfo;
+  onRestart: () => void;
+}) {
   const { pop } = useNavigation();
   const [newPort, setNewPort] = useState(String(info.port + 1));
 
   async function handleSubmit() {
     const port = parseInt(newPort, 10);
     if (isNaN(port) || port < 1 || port > 65535) {
-      await showToast({ style: Toast.Style.Failure, title: "Invalid port number" });
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Invalid port number",
+      });
       return;
     }
 
@@ -401,7 +490,10 @@ function RestartNextJSForm({ info, onRestart }: { info: PortInfo; onRestart: () 
     }
 
     const cwd = info.cwd || process.cwd();
-    const toast = await showToast({ style: Toast.Style.Animated, title: "Starting Next.js..." });
+    const toast = await showToast({
+      style: Toast.Style.Animated,
+      title: "Starting Next.js...",
+    });
 
     exec(`cd "${cwd}" && npm run dev -- --port ${port}`, (error) => {
       if (error) {
@@ -422,17 +514,35 @@ function RestartNextJSForm({ info, onRestart }: { info: PortInfo; onRestart: () 
     <Form
       actions={
         <ActionPanel>
-          <Action.SubmitForm title="Restart Next.js" onSubmit={handleSubmit} icon={Icon.ArrowClockwise} />
+          <Action.SubmitForm
+            title="Restart Next.js"
+            onSubmit={handleSubmit}
+            icon={Icon.ArrowClockwise}
+          />
         </ActionPanel>
       }
     >
-      <Form.Description text={`Restart Next.js from: ${info.cwd || "unknown"}`} />
-      <Form.TextField id="port" title="New Port" placeholder="3001" value={newPort} onChange={setNewPort} />
+      <Form.Description
+        text={`Restart Next.js from: ${info.cwd || "unknown"}`}
+      />
+      <Form.TextField
+        id="port"
+        title="New Port"
+        placeholder="3001"
+        value={newPort}
+        onChange={setNewPort}
+      />
     </Form>
   );
 }
 
-function RestartFlaskForm({ info, onRestart }: { info: PortInfo; onRestart: () => void }) {
+function RestartFlaskForm({
+  info,
+  onRestart,
+}: {
+  info: PortInfo;
+  onRestart: () => void;
+}) {
   const { pop } = useNavigation();
   const [newPort, setNewPort] = useState(String(info.port + 1));
   const [debug, setDebug] = useState(true);
@@ -440,7 +550,10 @@ function RestartFlaskForm({ info, onRestart }: { info: PortInfo; onRestart: () =
   async function handleSubmit() {
     const port = parseInt(newPort, 10);
     if (isNaN(port) || port < 1 || port > 65535) {
-      await showToast({ style: Toast.Style.Failure, title: "Invalid port number" });
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Invalid port number",
+      });
       return;
     }
 
@@ -451,7 +564,10 @@ function RestartFlaskForm({ info, onRestart }: { info: PortInfo; onRestart: () =
     }
 
     const cwd = info.cwd || process.cwd();
-    const toast = await showToast({ style: Toast.Style.Animated, title: "Starting Flask..." });
+    const toast = await showToast({
+      style: Toast.Style.Animated,
+      title: "Starting Flask...",
+    });
     const debugFlag = debug ? " --debug" : "";
 
     exec(`cd "${cwd}" && flask run --port ${port}${debugFlag}`, (error) => {
@@ -473,13 +589,28 @@ function RestartFlaskForm({ info, onRestart }: { info: PortInfo; onRestart: () =
     <Form
       actions={
         <ActionPanel>
-          <Action.SubmitForm title="Restart Flask" onSubmit={handleSubmit} icon={Icon.ArrowClockwise} />
+          <Action.SubmitForm
+            title="Restart Flask"
+            onSubmit={handleSubmit}
+            icon={Icon.ArrowClockwise}
+          />
         </ActionPanel>
       }
     >
       <Form.Description text={`Restart Flask from: ${info.cwd || "unknown"}`} />
-      <Form.TextField id="port" title="New Port" placeholder="5001" value={newPort} onChange={setNewPort} />
-      <Form.Checkbox id="debug" label="Enable --debug flag" value={debug} onChange={setDebug} />
+      <Form.TextField
+        id="port"
+        title="New Port"
+        placeholder="5001"
+        value={newPort}
+        onChange={setNewPort}
+      />
+      <Form.Checkbox
+        id="debug"
+        label="Enable --debug flag"
+        value={debug}
+        onChange={setDebug}
+      />
     </Form>
   );
 }
@@ -493,8 +624,11 @@ async function setHiddenPorts(ports: number[]): Promise<void> {
   await LocalStorage.setItem(HIDDEN_PORTS_KEY, JSON.stringify(ports));
 }
 
-async function dockerAction(action: string, container: string, port: number): Promise<void> {
-  const toast = await showToast({ style: Toast.Style.Animated, title: `Running docker ${action}...` });
+async function dockerAction(action: string, container: string): Promise<void> {
+  const toast = await showToast({
+    style: Toast.Style.Animated,
+    title: `Running docker ${action}...`,
+  });
   try {
     execSync(`docker ${action} ${container}`, { encoding: "utf-8" });
     toast.style = Toast.Style.Success;
@@ -512,7 +646,10 @@ async function runSvelteKitPreview(cwd: string, pid: number): Promise<void> {
     // Process may already be dead
   }
 
-  const toast = await showToast({ style: Toast.Style.Animated, title: "Building and starting preview..." });
+  const toast = await showToast({
+    style: Toast.Style.Animated,
+    title: "Building and starting preview...",
+  });
 
   exec(`cd "${cwd}" && npm run build && npm run preview`, (error) => {
     if (error) {
@@ -548,14 +685,18 @@ function PortListItem({
   }, [info.port, info.isDevServer]);
 
   const icon = (() => {
-    if (info.dockerContainer) return { source: Icon.Box, tintColor: Color.Blue };
-    if (info.isVite || info.isSvelteKit) return { source: Icon.Bolt, tintColor: Color.Purple };
+    if (info.dockerContainer)
+      return { source: Icon.Box, tintColor: Color.Blue };
+    if (info.isVite || info.isSvelteKit)
+      return { source: Icon.Bolt, tintColor: Color.Purple };
     if (info.isNextJS) return { source: Icon.Code, tintColor: Color.Green };
     if (info.isFastAPI) return { source: Icon.Rocket, tintColor: Color.Orange };
     if (info.isFlask) return { source: Icon.Beaker, tintColor: Color.Green };
     if (info.isDevServer) return { source: Icon.Code, tintColor: Color.Green };
-    if (info.command.includes("python")) return { source: Icon.Code, tintColor: Color.Yellow };
-    if (info.command.includes(".app/")) return { source: Icon.AppWindow, tintColor: Color.SecondaryText };
+    if (info.command.includes("python"))
+      return { source: Icon.Code, tintColor: Color.Yellow };
+    if (info.command.includes(".app/"))
+      return { source: Icon.AppWindow, tintColor: Color.SecondaryText };
     return { source: Icon.Network, tintColor: Color.SecondaryText };
   })();
 
@@ -563,18 +704,34 @@ function PortListItem({
   const subtitle = info.dockerContainer
     ? `Container: ${info.dockerContainer}`
     : info.projectPath
-      ? info.projectPath.replace(/^\/Users\/[^/]+\//, "~/").replace(/\/node_modules\/.*/, "")
+      ? info.projectPath
+          .replace(/^\/Users\/[^/]+\//, "~/")
+          .replace(/\/node_modules\/.*/, "")
       : undefined;
 
   const accessories: { tag: { value: string; color: Color } }[] = [
-    { tag: { value: `:${info.port}`, color: info.isDevServer || info.isFastAPI || info.isFlask ? Color.Green : Color.SecondaryText } },
+    {
+      tag: {
+        value: `:${info.port}`,
+        color:
+          info.isDevServer || info.isFastAPI || info.isFlask
+            ? Color.Green
+            : Color.SecondaryText,
+      },
+    },
   ];
-  if (info.dockerContainer) accessories.push({ tag: { value: "Docker", color: Color.Blue } });
-  if (info.isVite) accessories.push({ tag: { value: "Vite", color: Color.Purple } });
-  if (info.isSvelteKit) accessories.push({ tag: { value: "SvelteKit", color: Color.Orange } });
-  if (info.isNextJS) accessories.push({ tag: { value: "Next.js", color: Color.SecondaryText } });
-  if (info.isFastAPI) accessories.push({ tag: { value: "FastAPI", color: Color.Orange } });
-  if (info.isFlask) accessories.push({ tag: { value: "Flask", color: Color.Green } });
+  if (info.dockerContainer)
+    accessories.push({ tag: { value: "Docker", color: Color.Blue } });
+  if (info.isVite)
+    accessories.push({ tag: { value: "Vite", color: Color.Purple } });
+  if (info.isSvelteKit)
+    accessories.push({ tag: { value: "SvelteKit", color: Color.Orange } });
+  if (info.isNextJS)
+    accessories.push({ tag: { value: "Next.js", color: Color.SecondaryText } });
+  if (info.isFastAPI)
+    accessories.push({ tag: { value: "FastAPI", color: Color.Orange } });
+  if (info.isFlask)
+    accessories.push({ tag: { value: "Flask", color: Color.Green } });
 
   return (
     <List.Item
@@ -583,7 +740,12 @@ function PortListItem({
       title={title}
       subtitle={subtitle}
       accessories={accessories}
-      keywords={[String(info.port), info.displayName, info.command, info.dockerContainer || ""]}
+      keywords={[
+        String(info.port),
+        info.displayName,
+        info.command,
+        info.dockerContainer || "",
+      ]}
       actions={
         <ActionPanel>
           <ActionPanel.Section title="Actions">
@@ -595,13 +757,13 @@ function PortListItem({
             {info.isFastAPI && (
               <>
                 <Action.OpenInBrowser
-                  title="Open API Docs (Swagger)"
+                  title="Open Api Docs (swagger)"
                   url={`http://localhost:${info.port}/docs`}
                   icon={Icon.Document}
                   shortcut={{ modifiers: ["cmd"], key: "d" }}
                 />
                 <Action.OpenInBrowser
-                  title="Open ReDoc"
+                  title="Open Redoc"
                   url={`http://localhost:${info.port}/redoc`}
                   icon={Icon.Book}
                 />
@@ -619,52 +781,65 @@ function PortListItem({
           </ActionPanel.Section>
 
           {/* Service-specific restart actions */}
-          {(info.isVite || info.isFastAPI || info.isNextJS || info.isFlask || info.isSvelteKit) && info.cwd && (
-            <ActionPanel.Section title="Restart">
-              {info.isVite && (
-                <Action.Push
-                  title="Restart Vite on Different Port"
-                  icon={Icon.ArrowClockwise}
-                  shortcut={{ modifiers: ["cmd"], key: "r" }}
-                  target={<RestartViteForm info={info} onRestart={revalidate} />}
-                />
-              )}
-              {info.isFastAPI && (
-                <Action.Push
-                  title="Restart Uvicorn on Different Port"
-                  icon={Icon.ArrowClockwise}
-                  shortcut={{ modifiers: ["cmd"], key: "r" }}
-                  target={<RestartFastAPIForm info={info} onRestart={revalidate} />}
-                />
-              )}
-              {info.isNextJS && (
-                <Action.Push
-                  title="Restart Next.js on Different Port"
-                  icon={Icon.ArrowClockwise}
-                  shortcut={{ modifiers: ["cmd"], key: "r" }}
-                  target={<RestartNextJSForm info={info} onRestart={revalidate} />}
-                />
-              )}
-              {info.isFlask && (
-                <Action.Push
-                  title="Restart Flask on Different Port"
-                  icon={Icon.ArrowClockwise}
-                  shortcut={{ modifiers: ["cmd"], key: "r" }}
-                  target={<RestartFlaskForm info={info} onRestart={revalidate} />}
-                />
-              )}
-              {info.isSvelteKit && (
-                <Action
-                  title="Build and Run Preview"
-                  icon={Icon.Play}
-                  onAction={async () => {
-                    await runSvelteKitPreview(info.cwd!, info.pid);
-                    revalidate();
-                  }}
-                />
-              )}
-            </ActionPanel.Section>
-          )}
+          {(info.isVite ||
+            info.isFastAPI ||
+            info.isNextJS ||
+            info.isFlask ||
+            info.isSvelteKit) &&
+            info.cwd && (
+              <ActionPanel.Section title="Restart">
+                {info.isVite && (
+                  <Action.Push
+                    title="Restart Vite on Different Port"
+                    icon={Icon.ArrowClockwise}
+                    shortcut={{ modifiers: ["cmd"], key: "r" }}
+                    target={
+                      <RestartViteForm info={info} onRestart={revalidate} />
+                    }
+                  />
+                )}
+                {info.isFastAPI && (
+                  <Action.Push
+                    title="Restart Uvicorn on Different Port"
+                    icon={Icon.ArrowClockwise}
+                    shortcut={{ modifiers: ["cmd"], key: "r" }}
+                    target={
+                      <RestartFastAPIForm info={info} onRestart={revalidate} />
+                    }
+                  />
+                )}
+                {info.isNextJS && (
+                  <Action.Push
+                    title="Restart Next.js on Different Port"
+                    icon={Icon.ArrowClockwise}
+                    shortcut={{ modifiers: ["cmd"], key: "r" }}
+                    target={
+                      <RestartNextJSForm info={info} onRestart={revalidate} />
+                    }
+                  />
+                )}
+                {info.isFlask && (
+                  <Action.Push
+                    title="Restart Flask on Different Port"
+                    icon={Icon.ArrowClockwise}
+                    shortcut={{ modifiers: ["cmd"], key: "r" }}
+                    target={
+                      <RestartFlaskForm info={info} onRestart={revalidate} />
+                    }
+                  />
+                )}
+                {info.isSvelteKit && (
+                  <Action
+                    title="Build and Run Preview"
+                    icon={Icon.Play}
+                    onAction={async () => {
+                      await runSvelteKitPreview(info.cwd!, info.pid);
+                      revalidate();
+                    }}
+                  />
+                )}
+              </ActionPanel.Section>
+            )}
 
           {/* Docker-specific actions */}
           {info.dockerContainer && (
@@ -674,7 +849,7 @@ function PortListItem({
                 icon={Icon.ArrowClockwise}
                 shortcut={{ modifiers: ["cmd"], key: "r" }}
                 onAction={async () => {
-                  await dockerAction("restart", info.dockerContainer!, info.port);
+                  await dockerAction("restart", info.dockerContainer!);
                   revalidate();
                 }}
               />
@@ -682,7 +857,9 @@ function PortListItem({
                 title="View Logs in Terminal"
                 icon={Icon.Terminal}
                 onAction={() => {
-                  exec(`open -a Terminal -n --args -c "docker logs -f ${info.dockerContainer}"`);
+                  exec(
+                    `open -a Terminal -n --args -c "docker logs -f ${info.dockerContainer}"`,
+                  );
                 }}
               />
               <Action
@@ -690,7 +867,7 @@ function PortListItem({
                 icon={Icon.Stop}
                 style={Action.Style.Destructive}
                 onAction={async () => {
-                  await dockerAction("stop", info.dockerContainer!, info.port);
+                  await dockerAction("stop", info.dockerContainer!);
                   revalidate();
                 }}
               />
@@ -698,7 +875,9 @@ function PortListItem({
                 title="Open Shell in Container"
                 icon={Icon.Terminal}
                 onAction={() => {
-                  exec(`open -a Terminal -n --args -c "docker exec -it ${info.dockerContainer} sh"`);
+                  exec(
+                    `open -a Terminal -n --args -c "docker exec -it ${info.dockerContainer} sh"`,
+                  );
                 }}
               />
             </ActionPanel.Section>
@@ -722,10 +901,23 @@ function PortListItem({
               content={`http://localhost:${info.port}`}
               shortcut={{ modifiers: ["cmd"], key: "c" }}
             />
-            <Action.CopyToClipboard title="Copy Port" content={String(info.port)} />
-            <Action.CopyToClipboard title="Copy PID" content={String(info.pid)} />
-            {info.cwd && <Action.CopyToClipboard title="Copy Path" content={info.cwd} />}
-            {info.dockerContainer && <Action.CopyToClipboard title="Copy Container Name" content={info.dockerContainer} />}
+            <Action.CopyToClipboard
+              title="Copy Port"
+              content={String(info.port)}
+            />
+            <Action.CopyToClipboard
+              title="Copy Pid"
+              content={String(info.pid)}
+            />
+            {info.cwd && (
+              <Action.CopyToClipboard title="Copy Path" content={info.cwd} />
+            )}
+            {info.dockerContainer && (
+              <Action.CopyToClipboard
+                title="Copy Container Name"
+                content={info.dockerContainer}
+              />
+            )}
           </ActionPanel.Section>
 
           <ActionPanel.Section>
@@ -797,7 +989,11 @@ function HiddenServicesView({
 }
 
 export default function Command() {
-  const { isLoading, data: ports, revalidate } = useCachedPromise(getActivePorts, [], {
+  const {
+    isLoading,
+    data: ports,
+    revalidate,
+  } = useCachedPromise(getActivePorts, [], {
     keepPreviousData: true,
   });
 
@@ -812,7 +1008,10 @@ export default function Command() {
       const current = await getHiddenPorts();
       if (!current.includes(port)) {
         await setHiddenPorts([...current, port]);
-        await showToast({ style: Toast.Style.Success, title: `Port ${port} hidden` });
+        await showToast({
+          style: Toast.Style.Success,
+          title: `Port ${port} hidden`,
+        });
         revalidateHidden();
       }
     },
@@ -823,7 +1022,10 @@ export default function Command() {
     async (port: number) => {
       const current = await getHiddenPorts();
       await setHiddenPorts(current.filter((p) => p !== port));
-      await showToast({ style: Toast.Style.Success, title: `Port ${port} unhidden` });
+      await showToast({
+        style: Toast.Style.Success,
+        title: `Port ${port} unhidden`,
+      });
       revalidateHidden();
     },
     [revalidateHidden],
@@ -831,18 +1033,30 @@ export default function Command() {
 
   const allPorts = ports || [];
   const visiblePorts = allPorts.filter((p) => !hiddenPorts?.includes(p.port));
-  const hiddenCount = allPorts.filter((p) => hiddenPorts?.includes(p.port)).length;
+  const hiddenCount = allPorts.filter((p) =>
+    hiddenPorts?.includes(p.port),
+  ).length;
 
   const devPorts = visiblePorts.filter((p) => p.isDevServer);
   const systemPorts = visiblePorts.filter((p) => !p.isDevServer);
 
   return (
-    <List isLoading={isLoading || isLoadingHidden} searchBarPlaceholder="Filter by port, name, or path...">
+    <List
+      isLoading={isLoading || isLoadingHidden}
+      searchBarPlaceholder="Filter by port, name, or path..."
+    >
       {visiblePorts.length === 0 && !isLoading && (
-        <List.EmptyView title="No Active Ports" description="No listening ports found" icon={Icon.Network} />
+        <List.EmptyView
+          title="No Active Ports"
+          description="No listening ports found"
+          icon={Icon.Network}
+        />
       )}
       {devPorts.length > 0 && (
-        <List.Section title="Development Servers" subtitle={`${devPorts.length}`}>
+        <List.Section
+          title="Development Servers"
+          subtitle={`${devPorts.length}`}
+        >
           {devPorts.map((info) => (
             <PortListItem
               key={`${info.port}-${info.pid}`}

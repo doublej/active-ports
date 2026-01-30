@@ -76,7 +76,10 @@ export default function Command() {
   const count = ports.length;
 
   return (
-    <MenuBarExtra icon={Icon.Network} title={count > 0 ? `${count}` : undefined}>
+    <MenuBarExtra
+      icon={Icon.Network}
+      title={count > 0 ? `${count}` : undefined}
+    >
       {count === 0 ? (
         <MenuBarExtra.Item title="No active ports" />
       ) : (
